@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Dict, List
 
 from fastmcp import Context, FastMCP
 from pydantic import BeforeValidator, Field
@@ -12,6 +12,11 @@ from mcp_atlassian.servers.dependencies import get_confluence_fetcher
 from mcp_atlassian.utils.decorators import (
     check_write_access,
 )
+# ADF imports
+from mcp_atlassian.adf import ADFDocument, UpdateOperation
+from mcp_atlassian.adf.reader import get_page_with_full_formatting
+from mcp_atlassian.adf.finder import find_element_in_adf
+from mcp_atlassian.adf.writer import update_page_preserving_formatting
 
 logger = logging.getLogger(__name__)
 
@@ -744,3 +749,189 @@ async def search_user(
             indent=2,
             ensure_ascii=False,
         )
+
+
+@confluence_mcp.tool(tags={"confluence", "read", "adf"})
+async def get_page_adf(
+    ctx: Context,
+    page_id: Annotated[str, Field(description="ID of the Confluence page to retrieve in ADF format")],
+    analyze_formatting: Annotated[bool, Field(description="Whether to analyze and catalog formatting elements", default=True)] = True,
+    create_element_map: Annotated[bool, Field(description="Whether to create element map for fast navigation", default=True)] = True,
+    validate_structure: Annotated[bool, Field(description="Whether to validate ADF structure for correctness", default=True)] = True,
+) -> dict:
+    """Get Confluence page content in ADF format with full formatting preservation."""
+    try:
+        confluence_fetcher = await get_confluence_fetcher(ctx)
+        
+        # Use the ADF reader to get page with full formatting
+        result = get_page_with_full_formatting(
+            confluence_fetcher.confluence,
+            page_id,
+            analyze_formatting=analyze_formatting,
+            create_element_map=create_element_map,
+            validate_structure=validate_structure
+        )
+        
+        # Convert ADFDocument to dict for JSON serialization
+        if isinstance(result.get("adf_document"), ADFDocument):
+            result["adf_document"] = result["adf_document"].to_dict()
+        
+        logger.info(f"Successfully retrieved page {page_id} in ADF format")
+        return {"success": True, **result}
+        
+    except MCPAtlassianAuthenticationError as e:
+        logger.error(f"Authentication failed for page {page_id}: {e}")
+        return {"success": False, "error": f"Authentication failed: {e}", "error_type": "authentication"}
+    except Exception as e:
+        logger.error(f"Failed to retrieve page {page_id} in ADF format: {e}")
+        return {"success": False, "error": f"Failed to retrieve page: {e}"}
+
+
+@confluence_mcp.tool(tags={"confluence", "read", "adf"})
+async def find_elements_adf(
+    ctx: Context,
+    page_id: Annotated[str, Field(description="ID of the Confluence page to search within")],
+    search_criteria: Annotated[dict, Field(description="Search criteria for finding elements in ADF structure")],
+    limit: Annotated[int, Field(description="Maximum number of results", default=10)] = 10,
+    include_context: Annotated[bool, Field(description="Include parent element context", default=True)] = True,
+) -> dict:
+    """Find specific elements within an ADF document using search criteria."""
+    try:
+        confluence_fetcher = await get_confluence_fetcher(ctx)
+        
+        # Get the page in ADF format
+        page_result = get_page_with_full_formatting(
+            confluence_fetcher.confluence,
+            page_id,
+            analyze_formatting=False,
+            create_element_map=False,
+            validate_structure=False
+        )
+        
+        adf_document = page_result["adf_document"]
+        if not isinstance(adf_document, ADFDocument):
+            adf_document = ADFDocument.from_dict(adf_document)
+        
+        # Search for elements
+        search_results = find_element_in_adf(
+            adf_document,
+            search_criteria,
+            limit=limit,
+            include_context=include_context
+        )
+        
+        logger.info(f"Found {len(search_results)} elements in page {page_id}")
+        return {
+            "success": True,
+            "page_id": page_id,
+            "search_criteria": search_criteria,
+            "results_count": len(search_results),
+            "results": search_results,
+            "page_metadata": page_result["page_metadata"]
+        }
+        
+    except MCPAtlassianAuthenticationError as e:
+        logger.error(f"Authentication failed for page {page_id}: {e}")
+        return {"success": False, "error": f"Authentication failed: {e}", "error_type": "authentication"}
+    except Exception as e:
+        logger.error(f"Failed to search elements in page {page_id}: {e}")
+        return {"success": False, "error": f"Element search failed: {e}"}
+
+
+@confluence_mcp.tool(tags={"confluence", "write", "adf"})
+@check_write_access
+async def update_page_adf(
+    ctx: Context,
+    page_id: Annotated[str, Field(description="ID of the Confluence page to update")],
+    operations: Annotated[
+        List[Dict],
+        Field(
+            description=(
+                "List of update operations to apply. Each operation should contain:\n"
+                "- operation_type: 'replace', 'modify', 'insert_before', 'insert_after', 'delete', 'update_text'\n"
+                "- target_criteria: Search criteria for finding elements to update\n"
+                "- new_content: New content for the operation (if applicable)\n"
+                "- preserve_attributes: Whether to preserve original attributes (default: true)\n"
+                "- preserve_marks: Whether to preserve original formatting marks (default: true)\n"
+                "\nExample operations:\n"
+                "- Replace text: {'operation_type': 'replace', 'target_criteria': {'text': 'old text'}, 'new_content': {'type': 'text', 'text': 'new text'}}\n"
+                "- Update paragraph: {'operation_type': 'modify', 'target_criteria': {'node_type': 'paragraph'}, 'modifications': {'content': [...]}}\n"
+                "- Insert content: {'operation_type': 'insert_after', 'target_criteria': {'node_type': 'heading'}, 'new_content': {...}}\n"
+                "- Delete element: {'operation_type': 'delete', 'target_criteria': {'text': 'remove this'}}"
+            )
+        )
+    ],
+    validate_before_update: Annotated[
+        bool,
+        Field(description="Whether to validate ADF structure before sending update", default=True)
+    ] = True,
+    create_backup: Annotated[
+        bool,
+        Field(description="Whether to create backup before updating", default=True)
+    ] = True,
+    auto_retry_on_conflict: Annotated[
+        bool,
+        Field(description="Whether to automatically retry on version conflicts", default=True)
+    ] = True,
+    max_retries: Annotated[
+        int,
+        Field(description="Maximum number of retry attempts", default=3, ge=1, le=10)
+    ] = 3,
+) -> dict:
+    """
+    Update Confluence page while preserving all formatting.
+    
+    This tool allows precise modifications of ADF document elements while maintaining
+    the original formatting, colors, table structures, macros, and other complex layouts.
+    
+    Key features:
+    - Targeted element updates using search criteria
+    - Multiple operation types (replace, modify, insert, delete)
+    - Automatic formatting preservation
+    - Version conflict handling with auto-retry
+    - Comprehensive validation and error handling
+    - Backup creation for safety
+    
+    This is the core tool for implementing updatePagePreservingFormatting functionality.
+    """
+    try:
+        confluence_fetcher = await get_confluence_fetcher(ctx)
+        
+        # Use the ADF writer to update page with formatting preservation
+        result = update_page_preserving_formatting(
+            confluence_fetcher.confluence,
+            page_id,
+            operations,  # Will be converted to UpdateOperation objects internally
+            validate_before_update=validate_before_update,
+            create_backup=create_backup,
+            auto_retry_on_conflict=auto_retry_on_conflict,
+            max_retries=max_retries
+        )
+        
+        logger.info(
+            f"Page {page_id} update completed: "
+            f"{result.get('successful_operations', 0)}/{result.get('operations_count', 0)} operations applied"
+        )
+        
+        return result
+        
+    except MCPAtlassianAuthenticationError as e:
+        logger.error(f"Authentication failed for page {page_id}: {e}")
+        return {
+            "success": False,
+            "error": f"Authentication failed: {e}",
+            "error_type": "authentication"
+        }
+    except ValueError as e:
+        logger.error(f"Validation error for page {page_id}: {e}")
+        return {
+            "success": False,
+            "error": f"Validation error: {e}",
+            "error_type": "validation"
+        }
+    except Exception as e:
+        logger.error(f"Failed to update page {page_id}: {e}")
+        return {
+            "success": False,
+            "error": f"Page update failed: {e}",
+        }

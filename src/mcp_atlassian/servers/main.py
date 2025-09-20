@@ -84,6 +84,13 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
     logger.info(f"Read-only mode: {'ENABLED' if read_only else 'DISABLED'}")
     logger.info(f"Enabled tools filter: {enabled_tools or 'All tools enabled'}")
 
+    # Отладочная информация о загруженных инструментах (только в режиме --vv)
+    if logger.isEnabledFor(logging.DEBUG):
+        try:
+            await _debug_list_available_tools()
+        except Exception as e:
+            logger.debug(f"Failed to list tools during startup: {e}")
+
     try:
         yield {"app_lifespan_context": app_context}
     except Exception as e:
@@ -323,6 +330,63 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
             f"UserTokenMiddleware.dispatch: EXITED for request path='{request.url.path}'"
         )
         return response
+
+
+async def _debug_list_available_tools() -> None:
+    """Отладочная функция для вывода списка всех доступных инструментов."""
+    logger.debug("=" * 60)
+    logger.debug("📋 DEBUGGING: Listing all available MCP tools")
+    logger.debug("=" * 60)
+    
+    try:
+        # Получаем инструменты напрямую из подсерверов и добавляем префиксы
+        jira_tools_raw = await jira_mcp.get_tools()
+        confluence_tools_raw = await confluence_mcp.get_tools()
+        
+        # Добавляем префиксы как делает main_mcp
+        all_tools = {}
+        for name, tool in jira_tools_raw.items():
+            all_tools[f"jira_{name}"] = tool
+        for name, tool in confluence_tools_raw.items():
+            all_tools[f"confluence_{name}"] = tool
+        
+        # Разделяем инструменты по сервисам  
+        jira_tools = {k: v for k, v in all_tools.items() if k.startswith('jira_')}
+        confluence_tools = {k: v for k, v in all_tools.items() if k.startswith('confluence_')}
+        other_tools = {k: v for k, v in all_tools.items() if not k.startswith(('jira_', 'confluence_'))}
+        
+        # Найдем ADF инструменты
+        adf_tools = [name for name in confluence_tools.keys() if 'adf' in name.lower()]
+        
+        logger.debug(f"🎫 JIRA tools loaded: {len(jira_tools)}")
+        for i, tool_name in enumerate(sorted(jira_tools.keys()), 1):
+            logger.debug(f"   {i:2d}. {tool_name}")
+        
+        logger.debug(f"🔍 CONFLUENCE tools loaded: {len(confluence_tools)}")
+        for i, tool_name in enumerate(sorted(confluence_tools.keys()), 1):
+            prefix = "🆕" if 'adf' in tool_name.lower() else "  "
+            logger.debug(f"   {prefix} {i:2d}. {tool_name}")
+        
+        if other_tools:
+            logger.debug(f"🔧 OTHER tools loaded: {len(other_tools)}")
+            for i, tool_name in enumerate(sorted(other_tools.keys()), 1):
+                logger.debug(f"   {i:2d}. {tool_name}")
+        
+        if adf_tools:
+            logger.debug(f"🆕 ADF tools detected: {len(adf_tools)}")
+            for tool_name in sorted(adf_tools):
+                logger.debug(f"   ✅ {tool_name}")
+        else:
+            logger.debug("❌ No ADF tools found!")
+        
+        total_tools = len(all_tools)
+        logger.debug(f"📊 TOTAL tools available: {total_tools}")
+        logger.debug("=" * 60)
+        
+    except Exception as e:
+        logger.debug(f"❌ Error listing tools: {e}")
+        import traceback
+        logger.debug(f"Traceback: {traceback.format_exc()}")
 
 
 main_mcp = AtlassianMCP(name="Atlassian MCP", lifespan=main_lifespan)
