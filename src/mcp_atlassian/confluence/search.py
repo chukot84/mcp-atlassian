@@ -20,7 +20,7 @@ class SearchMixin(ConfluenceClient):
 
     @handle_atlassian_api_errors("Confluence API")
     def search(
-        self, cql: str, limit: int = 10, spaces_filter: str | None = None
+        self, cql: str, limit: int = 50, spaces_filter: str | None = None
     ) -> list[ConfluencePage]:
         """
         Search content using Confluence Query Language (CQL).
@@ -97,7 +97,7 @@ class SearchMixin(ConfluenceClient):
 
     @handle_atlassian_api_errors("Confluence API")
     def search_user(
-        self, cql: str, limit: int = 10
+        self, cql: str, limit: int = 50
     ) -> list[ConfluenceUserSearchResult]:
         """
         Search users using Confluence Query Language (CQL).

@@ -57,12 +57,12 @@ async def search(
     limit: Annotated[
         int,
         Field(
-            description="Maximum number of results (1-50)",
-            default=10,
+            description="Maximum number of results (1-250)",
+            default=50,
             ge=1,
-            le=50,
+            le=250,
         ),
-    ] = 10,
+    ] = 50,
     spaces_filter: Annotated[
         str | None,
         Field(
@@ -80,7 +80,7 @@ async def search(
     Args:
         ctx: The FastMCP context.
         query: Search query - can be simple text or a CQL query string.
-        limit: Maximum number of results (1-50).
+        limit: Maximum number of results (1-250).
         spaces_filter: Comma-separated list of space keys to filter by.
 
     Returns:
@@ -250,12 +250,12 @@ async def get_page_children(
     limit: Annotated[
         int,
         Field(
-            description="Maximum number of child pages to return (1-50)",
-            default=25,
+            description="Maximum number of child pages to return (1-250)",
+            default=50,
             ge=1,
-            le=50,
+            le=250,
         ),
-    ] = 25,
+    ] = 50,
     include_content: Annotated[
         bool,
         Field(
@@ -699,19 +699,19 @@ async def search_user(
     limit: Annotated[
         int,
         Field(
-            description="Maximum number of results (1-50)",
-            default=10,
+            description="Maximum number of results (1-250)",
+            default=50,
             ge=1,
-            le=50,
+            le=250,
         ),
-    ] = 10,
+    ] = 50,
 ) -> str:
     """Search Confluence users using CQL.
 
     Args:
         ctx: The FastMCP context.
         query: Search query - a CQL query string for user search.
-        limit: Maximum number of results (1-50).
+        limit: Maximum number of results (1-250).
 
     Returns:
         JSON string representing a list of simplified Confluence user search result objects.
@@ -763,9 +763,13 @@ async def get_page_adf(
     try:
         confluence_fetcher = await get_confluence_fetcher(ctx)
         
+        # Create a ConfluenceClient instance with the fetcher's config
+        from mcp_atlassian.confluence.client import ConfluenceClient
+        confluence_client = ConfluenceClient(confluence_fetcher.config)
+        
         # Use the ADF reader to get page with full formatting
         result = get_page_with_full_formatting(
-            confluence_fetcher.confluence,
+            confluence_client,
             page_id,
             analyze_formatting=analyze_formatting,
             create_element_map=create_element_map,
@@ -792,16 +796,20 @@ async def find_elements_adf(
     ctx: Context,
     page_id: Annotated[str, Field(description="ID of the Confluence page to search within")],
     search_criteria: Annotated[dict, Field(description="Search criteria for finding elements in ADF structure")],
-    limit: Annotated[int, Field(description="Maximum number of results", default=10)] = 10,
+    limit: Annotated[int, Field(description="Maximum number of results", default=50)] = 50,
     include_context: Annotated[bool, Field(description="Include parent element context", default=True)] = True,
 ) -> dict:
     """Find specific elements within an ADF document using search criteria."""
     try:
         confluence_fetcher = await get_confluence_fetcher(ctx)
         
+        # Create a ConfluenceClient instance with the fetcher's config
+        from mcp_atlassian.confluence.client import ConfluenceClient
+        confluence_client = ConfluenceClient(confluence_fetcher.config)
+        
         # Get the page in ADF format
         page_result = get_page_with_full_formatting(
-            confluence_fetcher.confluence,
+            confluence_client,
             page_id,
             analyze_formatting=False,
             create_element_map=False,
@@ -897,9 +905,13 @@ async def update_page_adf(
     try:
         confluence_fetcher = await get_confluence_fetcher(ctx)
         
+        # Create a ConfluenceClient instance with the fetcher's config  
+        from mcp_atlassian.confluence.client import ConfluenceClient
+        confluence_client = ConfluenceClient(confluence_fetcher.config)
+        
         # Use the ADF writer to update page with formatting preservation
         result = update_page_preserving_formatting(
-            confluence_fetcher.confluence,
+            confluence_client,
             page_id,
             operations,  # Will be converted to UpdateOperation objects internally
             validate_before_update=validate_before_update,

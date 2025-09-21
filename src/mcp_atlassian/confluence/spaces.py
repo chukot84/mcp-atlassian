@@ -13,7 +13,7 @@ logger = logging.getLogger("mcp-atlassian")
 class SpacesMixin(ConfluenceClient):
     """Mixin for Confluence space operations."""
 
-    def get_spaces(self, start: int = 0, limit: int = 10) -> dict[str, object]:
+    def get_spaces(self, start: int = 0, limit: int = 25) -> dict[str, object]:
         """
         Get all available spaces.
 

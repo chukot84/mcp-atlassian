@@ -221,7 +221,7 @@ class PagesMixin(ConfluenceClient):
         self,
         space_key: str,
         start: int = 0,
-        limit: int = 10,
+        limit: int = 50,
         *,
         convert_to_markdown: bool = True,
     ) -> list[ConfluencePage]:

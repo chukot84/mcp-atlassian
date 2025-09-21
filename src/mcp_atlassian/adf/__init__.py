@@ -32,6 +32,9 @@ from .validator import ADFValidator
 from .reader import ADFReader, get_page_with_full_formatting
 from .finder import ADFFinder, find_element_in_adf
 from .writer import ADFWriter, UpdateOperation, update_page_preserving_formatting
+from .colors import ColorFormatter, preserve_color_formatting, analyze_document_colors, standardize_document_colors
+from .tables import TableManager, preserve_table_structure, analyze_table_structure, validate_table_integrity
+from .macros import MacroManager, preserve_macro_parameters, analyze_document_macros, create_macro, validate_macro
 
 # Version information
 __version__ = "1.0.0"
@@ -40,6 +43,7 @@ __adf_version__ = "1"  # Supported ADF version
 __all__ = [
     # Core classes
     "ADFDocument", "ADFValidator", "ADFReader", "ADFFinder", "ADFWriter", "UpdateOperation",
+    "ColorFormatter", "TableManager", "MacroManager",
     
     # Element classes
     "TextElement", "ParagraphElement", "HeadingElement", "PanelElement",
@@ -57,5 +61,8 @@ __all__ = [
     "CONFLUENCE_COLORS", "EMPTY_ADF_DOCUMENT", "DEFAULT_PARAGRAPH", "ERROR_MESSAGES",
     
     # Functions
-    "get_page_with_full_formatting", "find_element_in_adf", "update_page_preserving_formatting"
+    "get_page_with_full_formatting", "find_element_in_adf", "update_page_preserving_formatting",
+    "preserve_color_formatting", "analyze_document_colors", "standardize_document_colors",
+    "preserve_table_structure", "analyze_table_structure", "validate_table_integrity",
+    "preserve_macro_parameters", "analyze_document_macros", "create_macro", "validate_macro"
 ]
